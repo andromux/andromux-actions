@@ -47,7 +47,7 @@ jobs:
     - name: Upload backup to MEGA
       uses: Difegue/action-megacmd@master
       with:
-        args: put ${{ steps.vars.outputs.zip_name }} /backups/github/${{ steps.vars.outputs.repo_name }}/
+        args: put -c ${{ steps.vars.outputs.zip_name }} /backups/github/${{ steps.vars.outputs.repo_name }}/
       env:
         USERNAME: ${{ secrets.MEGA_USERNAME }}
         PASSWORD: ${{ secrets.MEGA_PASSWORD }}
