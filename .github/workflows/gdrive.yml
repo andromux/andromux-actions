@@ -26,6 +26,10 @@ jobs:
         ZIP_NAME="${{ github.event.repository.name }}_${{ steps.commit_info.outputs.branch_name }}_${{ steps.commit_info.outputs.short_sha }}_${{ steps.commit_info.outputs.commit_date }}.zip"
         echo "ZIP_NAME=${ZIP_NAME}" >> $GITHUB_ENV
         
+        # Mostrar contenido del directorio antes de crear ZIP
+        echo "=== Contenido del directorio actual ==="
+        ls -la
+        
         # Crear el ZIP excluyendo .git y otros archivos no necesarios
         zip -r "${ZIP_NAME}" . \
           -x "*.git*" \
@@ -36,9 +40,19 @@ jobs:
           -x "*dist/*" \
           -x "*build/*"
           
-        # Mostrar información del archivo creado
-        ls -lh "${ZIP_NAME}"
-        echo "Archivo ZIP creado: ${ZIP_NAME}"
+        # Verificar que el archivo se creó correctamente
+        echo "=== Verificación del archivo ZIP ==="
+        if [ -f "${ZIP_NAME}" ]; then
+          ls -lh "${ZIP_NAME}"
+          echo "✅ Archivo ZIP creado exitosamente: ${ZIP_NAME}"
+          
+          # Mostrar contenido del ZIP
+          echo "=== Contenido del ZIP ==="
+          unzip -l "${ZIP_NAME}"
+        else
+          echo "❌ Error: No se pudo crear el archivo ZIP"
+          exit 1
+        fi
     
     - name: Upload ZIP to Google Drive
       uses: willo32/google-drive-upload-action@v1
@@ -47,4 +61,5 @@ jobs:
         credentials: ${{ secrets.GOOGLE_DRIVE_CREDENTIALS }}
         parent_folder_id: 12YWEG-OepsSdtxQBsT861UlLQ3jvM0KR
         name: ${{ env.ZIP_NAME }}
-        child_folder: ${{ steps.commit_info.outputs.branch_name }}
+        # Temporalmente sin child_folder para probar
+        # child_folder: ${{ steps.commit_info.outputs.branch_name }}
