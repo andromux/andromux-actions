@@ -1,0 +1,7 @@
+#!/bin/bash
+git pull
+sleep 1
+read -p "commit: " cambio           # Pedimos el mensaje del commit
+git add .                           # Añadimos todos los cambios al área de preparación
+git commit -m "$cambio"             # Hacemos el commit con el mensaje especificado
+git push origin main                # Hacemos push a la rama 'main'

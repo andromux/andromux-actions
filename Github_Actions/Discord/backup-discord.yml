@@ -1,0 +1,254 @@
+# Backup directo a Discord
+name: Backup a Discord
+
+on:
+  schedule:
+    # Ejecuta cada día a las 2:00 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch: # Permite ejecutar manualmente
+
+jobs:
+  backup-to-discord:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repositorio actual (solo el commit actual)
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 1 # Obtiene solo el último commit para reducir el tamaño
+        
+    - name: Configurar fecha y variables
+      id: date
+      run: |
+        echo "date=$(date +'%Y-%m-%d_%H-%M-%S')" >> $GITHUB_OUTPUT
+        echo "short_date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+        echo "repo_name=$(echo '${{ github.repository }}' | cut -d'/' -f2)" >> $GITHUB_OUTPUT
+        
+    - name: Crear estructura de backup
+      id: create_backup
+      run: |
+        mkdir -p backup-data
+        
+        # Información del repositorio
+        echo "=== BACKUP DEL REPOSITORIO ${{ github.repository }} ===" > backup-data/backup-info.md
+        echo "" >> backup-data/backup-info.md
+        echo "## 📊 Información del Backup" >> backup-data/backup-info.md
+        echo "- **Fecha**: $(date)" >> backup-data/backup-info.md
+        echo "- **Repositorio origen**: ${{ github.repository }}" >> backup-data/backup-info.md
+        echo "- **Commit actual**: $(git rev-parse HEAD)" >> backup-data/backup-info.md
+        echo "- **Rama**: $(git branch --show-current)" >> backup-data/backup-info.md
+        echo "- **Último commit**: $(git log -1 --pretty=format:'%h - %ar : %s')" >> backup-data/backup-info.md
+        echo "" >> backup-data/backup-info.md
+        
+        # Estadísticas del repositorio
+        echo "## 📈 Estadísticas" >> backup-data/backup-info.md
+        echo "- **Total de archivos**: $(find . -type f -not -path './.git/*' -not -path './backup-data/*' | wc -l)" >> backup-data/backup-info.md
+        echo "- **Archivos HTML**: $(find . -name '*.html' -not -path './.git/*' | wc -l)" >> backup-data/backup-info.md
+        echo "- **Archivos CSS**: $(find . -name '*.css' -not -path './.git/*' | wc -l)" >> backup-data/backup-info.md
+        echo "- **Archivos JS**: $(find . -name '*.js' -not -path './.git/*' | wc -l)" >> backup-data/backup-info.md
+        echo "- **Imágenes**: $(find . \( -name '*.jpg' -o -name '*.png' -o -name '*.gif' -o -name '*.svg' \) -not -path './.git/*' | wc -l)" >> backup-data/backup-info.md
+        echo "" >> backup-data/backup-info.md
+        
+        # Lista de archivos principales
+        echo "## 📁 Archivos principales incluidos" >> backup-data/backup-info.md
+        echo "\`\`\`" >> backup-data/backup-info.md
+        find . -maxdepth 2 -type f -not -path './.git/*' -not -path './backup-data/*' | sort >> backup-data/backup-info.md
+        echo "\`\`\`" >> backup-data/backup-info.md
+        
+        # Crear archivo comprimido del código fuente
+        echo "📦 Creando archivo comprimido..."
+        tar -czf backup-data/discord-backup-${{ steps.date.outputs.date }}.tar.gz \
+          --exclude='.git' \
+          --exclude='backup-data' \
+          --exclude='node_modules' \
+          --exclude='.github' \
+          --exclude='*.log' \
+          --exclude='*.tmp' \
+          .
+          
+        # Verificar tamaño del archivo
+        BACKUP_SIZE_BYTES=$(stat -f%z backup-data/discord-backup-${{ steps.date.outputs.date }}.tar.gz 2>/dev/null || stat -c%s backup-data/discord-backup-${{ steps.date.outputs.date }}.tar.gz)
+        BACKUP_SIZE_MB=$((BACKUP_SIZE_BYTES / 1024 / 1024))
+        BACKUP_SIZE_HUMAN=$(du -h backup-data/discord-backup-${{ steps.date.outputs.date }}.tar.gz | cut -f1)
+        
+        echo "backup_size_mb=$BACKUP_SIZE_MB" >> $GITHUB_OUTPUT
+        echo "backup_size_human=$BACKUP_SIZE_HUMAN" >> $GITHUB_OUTPUT
+        echo "backup_filename=discord-backup-${{ steps.date.outputs.date }}.tar.gz" >> $GITHUB_OUTPUT
+        
+        # Verificar si el archivo es menor a 25MB
+        if [ $BACKUP_SIZE_MB -gt 24 ]; then
+          echo "⚠️ ADVERTENCIA: Archivo de $BACKUP_SIZE_MB MB puede ser demasiado grande para Discord"
+          echo "backup_too_large=true" >> $GITHUB_OUTPUT
+        else
+          echo "✅ Archivo de $BACKUP_SIZE_MB MB está dentro del límite de Discord"
+          echo "backup_too_large=false" >> $GITHUB_OUTPUT
+        fi
+        
+        # Crear backup del historial git (solo el último commit)
+        git bundle create backup-data/git-history-${{ steps.date.outputs.date }}.bundle HEAD
+        BUNDLE_SIZE_HUMAN=$(du -h backup-data/git-history-${{ steps.date.outputs.date }}.bundle | cut -f1)
+        echo "bundle_size_human=$BUNDLE_SIZE_HUMAN" >> $GITHUB_OUTPUT
+        
+    # Enviar notificación previa con información
+    - name: Notificación previa a Discord
+      uses: tsickert/discord-webhook@v5.3.0
+      with:
+        webhook-url: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        content: |
+          🔄 **Iniciando backup a Discord...**
+          
+          **📊 Información:**
+          - **Repositorio**: `${{ github.repository }}`
+          - **Fecha**: `${{ steps.date.outputs.short_date }}`
+          - **Tamaño del backup**: `${{ steps.create_backup.outputs.backup_size_human }}`
+          - **Historial Git**: `${{ steps.create_backup.outputs.bundle_size_human }}`
+          
+          ${{ steps.create_backup.outputs.backup_too_large == 'true' && '⚠️ **ADVERTENCIA**: El archivo puede ser demasiado grande para Discord (>24MB)' || '✅ **OK**: Archivo dentro del límite de Discord' }}
+          
+          📤 Subiendo archivos...
+        
+    # Subir archivo principal a Discord
+    - name: Enviar backup principal a Discord
+      if: steps.create_backup.outputs.backup_too_large == 'false'
+      uses: sinshutu/upload-to-discord@master
+      env:
+        DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+      with:
+        args: backup-data/${{ steps.create_backup.outputs.backup_filename }}
+        
+    # Subir historial Git a Discord
+    - name: Enviar historial Git a Discord
+      uses: sinshutu/upload-to-discord@master
+      env:
+        DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+      with:
+        args: backup-data/git-history-${{ steps.date.outputs.date }}.bundle
+        
+    # Subir información del backup a Discord
+    - name: Enviar información del backup a Discord
+      uses: sinshutu/upload-to-discord@master
+      env:
+        DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+      with:
+        args: backup-data/backup-info.md
+        
+    # Crear backup dividido si es muy grande
+    - name: Crear backup dividido si es necesario
+      if: steps.create_backup.outputs.backup_too_large == 'true'
+      id: split_backup
+      run: |
+        echo "📦 Creando backup dividido para Discord..."
+        
+        # Dividir en partes más pequeñas (20MB cada una)
+        split -b 20M backup-data/${{ steps.create_backup.outputs.backup_filename }} backup-data/discord-backup-part-
+        
+        # Renombrar partes con extensión
+        cd backup-data
+        for part in discord-backup-part-*; do
+          mv "$part" "$part.tar.gz"
+        done
+        
+        # Contar partes
+        PARTS_COUNT=$(ls discord-backup-part-*.tar.gz | wc -l)
+        echo "parts_count=$PARTS_COUNT" >> $GITHUB_OUTPUT
+        
+        # Crear archivo de instrucciones para unir
+        echo "# 🔧 Instrucciones para unir el backup dividido" > merge-instructions.md
+        echo "" >> merge-instructions.md
+        echo "Este backup fue dividido en $PARTS_COUNT partes porque excedía 25MB." >> merge-instructions.md
+        echo "" >> merge-instructions.md
+        echo "## Para unir las partes:" >> merge-instructions.md
+        echo "" >> merge-instructions.md
+        echo "### En Linux/macOS:" >> merge-instructions.md
+        echo "\`\`\`bash" >> merge-instructions.md
+        echo "cat discord-backup-part-*.tar.gz > ${{ steps.create_backup.outputs.backup_filename }}" >> merge-instructions.md
+        echo "tar -xzf ${{ steps.create_backup.outputs.backup_filename }}" >> merge-instructions.md
+        echo "\`\`\`" >> merge-instructions.md
+        echo "" >> merge-instructions.md
+        echo "### En Windows (PowerShell):" >> merge-instructions.md
+        echo "\`\`\`powershell" >> merge-instructions.md
+        echo "Get-Content discord-backup-part-*.tar.gz -Raw | Set-Content ${{ steps.create_backup.outputs.backup_filename }} -Encoding Byte" >> merge-instructions.md
+        echo "\`\`\`" >> merge-instructions.md
+        echo "" >> merge-instructions.md
+        echo "**📅 Backup generado**: ${{ steps.date.outputs.date }}" >> merge-instructions.md
+        
+    # Subir partes divididas si es necesario
+    - name: Enviar partes divididas a Discord
+      if: steps.create_backup.outputs.backup_too_large == 'true'
+      run: |
+        echo "📤 Enviando backup dividido en ${{ steps.split_backup.outputs.parts_count }} partes..."
+        
+        # Enviar instrucciones primero
+        curl -X POST \
+          -H "Content-Type: multipart/form-data" \
+          -F "file=@backup-data/merge-instructions.md" \
+          "${{ secrets.DISCORD_WEBHOOK_URL }}"
+        
+        # Enviar cada parte
+        for part in backup-data/discord-backup-part-*.tar.gz; do
+          if [ -f "$part" ]; then
+            echo "Enviando $(basename "$part")..."
+            curl -X POST \
+              -H "Content-Type: multipart/form-data" \
+              -F "file=@$part" \
+              "${{ secrets.DISCORD_WEBHOOK_URL }}"
+            
+            # Esperar un poco entre uploads para no saturar
+            sleep 2
+          fi
+        done
+        
+    # Notificación final de éxito
+    - name: Notificación final de éxito
+      if: success()
+      uses: tsickert/discord-webhook@v5.3.0
+      with:
+        webhook-url: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        content: |
+          ✅ **¡Backup completo enviado a Discord!**
+          
+          **📊 Resumen final:**
+          - **Repositorio**: `${{ github.repository }}`
+          - **Fecha**: `${{ steps.date.outputs.short_date }}`
+          - **Código fuente**: `${{ steps.create_backup.outputs.backup_size_human }}`
+          - **Historial Git**: `${{ steps.create_backup.outputs.bundle_size_human }}`
+          
+          ${{ steps.create_backup.outputs.backup_too_large == 'true' && format('**📦 Backup dividido**: {0} partes enviadas', steps.split_backup.outputs.parts_count) || '**📦 Backup único**: Archivo completo enviado' }}
+          
+          **📁 Archivos recibidos:**
+          ${{ steps.create_backup.outputs.backup_too_large == 'false' && format('- `{0}` - Código fuente completo', steps.create_backup.outputs.backup_filename) || format('- `discord-backup-part-*.tar.gz` - {0} partes del código fuente', steps.split_backup.outputs.parts_count) }}
+          - `git-history-${{ steps.date.outputs.date }}.bundle` - Historial Git
+          - `backup-info.md` - Información detallada
+          ${{ steps.create_backup.outputs.backup_too_large == 'true' && '- `merge-instructions.md` - Instrucciones para unir' || '' }}
+          
+          **🔒 Seguridad**: Archivos almacenados de forma segura en Discord
+          **💾 Retención**: Los archivos se mantendrán mientras exista el canal
+          
+          ---
+          *🤖 Backup automático completado*
+          
+    # Notificación de fallo
+    - name: Notificación de fallo en Discord
+      if: failure()
+      uses: tsickert/discord-webhook@v5.3.0
+      with:
+        webhook-url: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        content: |
+          ❌ **¡Error en backup a Discord!**
+          
+          El backup del repositorio **${{ github.repository }}** ha fallado.
+          
+          **🔍 Posibles causas:**
+          - Archivo demasiado grande (>25MB)
+          - Problema con el webhook de Discord
+          - Error en la creación del archivo comprimido
+          
+          **📋 Ver logs detallados:**
+          > ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          
+          **⚙️ Revisar configuración:**
+          - Secret `DISCORD_WEBHOOK_URL` configurado correctamente
+          - Webhook de Discord activo
+          
+          ---
+          *🤖 Notificación automática de error*
