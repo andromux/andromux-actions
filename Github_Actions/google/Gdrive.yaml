@@ -1,0 +1,32 @@
+name: Upload to Google Drive
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  # También puedes configurarlo para que se ejecute manualmente
+  workflow_dispatch:
+
+jobs:
+  upload-to-drive:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    # Aquí puedes agregar pasos para generar/preparar tu archivo
+    # Por ejemplo, si necesitas compilar algo primero:
+    # - name: Build project
+    #   run: |
+    #     # tus comandos de build aquí
+    
+    - name: Upload file to Google Drive
+      uses: willo32/google-drive-upload-action@v1
+      with:
+        target: ruta/a/tu/archivo.txt  # Cambia esto por la ruta de tu archivo
+        credentials: ${{ secrets.GOOGLE_DRIVE_CREDENTIALS }}
+        parent_folder_id: 1UtrSpk5nEtdBUk68Rfr21WaMiYKhDTwP
+        name: mi-archivo-subido.txt  # Nombre opcional para el archivo en Drive
+        # child_folder: v1.0  # Opcional: subcarpeta donde subir el archivo
