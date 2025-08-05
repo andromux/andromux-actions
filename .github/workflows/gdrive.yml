@@ -45,6 +45,6 @@ jobs:
       with:
         target: ${{ env.ZIP_NAME }}
         credentials: ${{ secrets.GOOGLE_DRIVE_CREDENTIALS }}
-        parent_folder_id: 1UtrSpk5nEtdBUk68Rfr21WaMiYKhDTwP
+        parent_folder_id: 12YWEG-OepsSdtxQBsT861UlLQ3jvM0KR
         name: ${{ env.ZIP_NAME }}
-        child_folder: ${{ steps.commit_info.outputs.branch_name }}  # Organizar por rama
+        child_folder: ${{ steps.commit_info.outputs.branch_name }}
