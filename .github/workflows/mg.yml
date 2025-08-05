@@ -3,10 +3,6 @@ name: Copias Mega
 on:
   # Ejecutar manualmente
   workflow_dispatch:
-  
-  # Ejecutar en cada push a main (opcional)
-  push:
-    branches: [ main ]
 
 jobs:
   backup-to-mega:
