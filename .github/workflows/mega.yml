@@ -2,8 +2,6 @@
 name: Backup a MEGA
 
 on:
-  schedule:
-    - cron: '0 2 * * *'  # Diario a las 2:00 AM UTC
   workflow_dispatch: # Ejecutar manualmente
 
 jobs:
