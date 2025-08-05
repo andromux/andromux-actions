@@ -1,0 +1,60 @@
+name: Copias Mega
+
+on:
+  # Ejecutar manualmente
+  workflow_dispatch:
+  
+  # Ejecutar cada domingo a las 2:00 AM UTC (opcional)
+  schedule:
+    - cron: '0 2 * * 0'
+  
+  # Ejecutar en cada push a main (opcional)
+  push:
+    branches: [ main ]
+
+jobs:
+  backup-to-mega:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        # Descargar todo el historial de git
+        fetch-depth: 0
+    
+    - name: Get repository name and date
+      id: vars
+      run: |
+        REPO_NAME=$(basename $GITHUB_REPOSITORY)
+        DATE=$(date +%Y%m%d_%H%M%S)
+        ZIP_NAME="${REPO_NAME}_backup_${DATE}.zip"
+        echo "repo_name=$REPO_NAME" >> $GITHUB_OUTPUT
+        echo "date=$DATE" >> $GITHUB_OUTPUT
+        echo "zip_name=$ZIP_NAME" >> $GITHUB_OUTPUT
+    
+    - name: Create backup zip
+      run: |
+        # Crear zip excluyendo .git para ahorrar espacio (opcional)
+        zip -r ${{ steps.vars.outputs.zip_name }} . -x "*.git*"
+        
+        # O incluir todo (descomenta la línea de abajo y comenta la de arriba)
+        # zip -r ${{ steps.vars.outputs.zip_name }} .
+        
+        # Mostrar información del archivo
+        ls -lh ${{ steps.vars.outputs.zip_name }}
+    
+    - name: Upload backup to MEGA
+      uses: Difegue/action-megacmd@master
+      with:
+        args: put ${{ steps.vars.outputs.zip_name }} /backups/github/${{ steps.vars.outputs.repo_name }}/
+      env:
+        USERNAME: ${{ secrets.MEGA_USERNAME }}
+        PASSWORD: ${{ secrets.MEGA_PASSWORD }}
+    
+    - name: Backup completion notification
+      run: |
+        echo "✅ Backup completado exitosamente"
+        echo "📁 Archivo: ${{ steps.vars.outputs.zip_name }}"
+        echo "📤 Subido a: /backups/github/${{ steps.vars.outputs.repo_name }}/"
+        echo "📅 Fecha: ${{ steps.vars.outputs.date }}"
